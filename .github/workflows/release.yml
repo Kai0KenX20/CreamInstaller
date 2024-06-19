@@ -1,0 +1,68 @@
+name: Publish Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'The name of the release'
+        required: true
+      release_tag:
+        description: 'The tag for the release'
+        required: true
+      release_description:
+        description: 'The description of the release'
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Fetch all tags
+      run: git fetch --tags
+
+    - name: Get latest tag
+      id: get_latest_tag
+      run: echo ::set-output name=tag::$(git describe --tags `git rev-list --tags --max-count=1`)
+
+    - name: Checkout latest tag
+      run: git checkout ${{ steps.get_latest_tag.outputs.tag }}
+
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '7.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build the project
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Publish the project
+      run: dotnet publish --configuration Release --no-build --output ./output
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.event.inputs.release_tag }}
+        release_name: ${{ github.event.inputs.release_name }}
+        body: ${{ github.event.inputs.release_description || 'No description provided' }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./output
+        asset_name: creaminstaller.zip
+        asset_content_type: application/zip
